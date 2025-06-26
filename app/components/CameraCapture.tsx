@@ -1,11 +1,20 @@
 'use client'
 
-import { useRef, useState, useCallback } from 'react'
+import { useRef, useState, useCallback, useEffect } from 'react'
 
 interface CameraCaptureProps {
   onCapture: (file: File) => void
   label: string
   disabled?: boolean
+}
+
+function isIOS() {
+  if (typeof window === 'undefined') return false
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream
+}
+
+function isGetUserMediaSupported() {
+  return typeof window !== 'undefined' && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)
 }
 
 export default function CameraCapture({ onCapture, label, disabled = false }: CameraCaptureProps) {
@@ -14,18 +23,29 @@ export default function CameraCapture({ onCapture, label, disabled = false }: Ca
   const [stream, setStream] = useState<MediaStream | null>(null)
   const [isCameraOpen, setIsCameraOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [useFileInput, setUseFileInput] = useState(false)
+
+  // Detect iOS or lack of getUserMedia support
+  useEffect(() => {
+    if (isIOS() || !isGetUserMediaSupported()) {
+      setUseFileInput(true)
+    }
+  }, [])
 
   const openCamera = useCallback(async () => {
+    setError(null)
+    if (useFileInput) {
+      // Trigger file input click
+      document.getElementById('file-input-' + label)?.click()
+      return
+    }
     try {
-      setError(null)
       const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' }, // Use back camera on mobile
+        video: { facingMode: 'environment' },
         audio: false
       })
-      
       setStream(mediaStream)
       setIsCameraOpen(true)
-      
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream
       }
@@ -33,7 +53,7 @@ export default function CameraCapture({ onCapture, label, disabled = false }: Ca
       setError('Unable to access camera. Please check permissions.')
       console.error('Camera access error:', err)
     }
-  }, [])
+  }, [useFileInput, label])
 
   const closeCamera = useCallback(() => {
     if (stream) {
@@ -46,21 +66,13 @@ export default function CameraCapture({ onCapture, label, disabled = false }: Ca
 
   const capturePhoto = useCallback(() => {
     if (!videoRef.current || !canvasRef.current) return
-
     const video = videoRef.current
     const canvas = canvasRef.current
     const context = canvas.getContext('2d')
-
     if (!context) return
-
-    // Set canvas dimensions to match video
     canvas.width = video.videoWidth
     canvas.height = video.videoHeight
-
-    // Draw video frame to canvas
     context.drawImage(video, 0, 0, canvas.width, canvas.height)
-
-    // Convert canvas to blob
     canvas.toBlob((blob) => {
       if (blob) {
         const file = new File([blob], `photo_${Date.now()}.jpg`, {
@@ -72,8 +84,30 @@ export default function CameraCapture({ onCapture, label, disabled = false }: Ca
     }, 'image/jpeg', 0.8)
   }, [onCapture, closeCamera])
 
+  // Handle file input fallback
+  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      onCapture(file)
+    }
+    // Reset value so user can re-trigger the same input
+    e.target.value = ''
+  }
+
   return (
     <div className="space-y-4">
+      {/* Hidden file input for iOS/fallback */}
+      {useFileInput && (
+        <input
+          id={'file-input-' + label}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          style={{ display: 'none' }}
+          onChange={handleFileInput}
+          disabled={disabled}
+        />
+      )}
       {!isCameraOpen ? (
         <button
           onClick={openCamera}
@@ -96,7 +130,6 @@ export default function CameraCapture({ onCapture, label, disabled = false }: Ca
               className="hidden"
             />
           </div>
-          
           <div className="flex space-x-2">
             <button
               onClick={capturePhoto}
@@ -113,7 +146,6 @@ export default function CameraCapture({ onCapture, label, disabled = false }: Ca
           </div>
         </div>
       )}
-      
       {error && (
         <div className="text-red-600 text-sm bg-red-50 p-3 rounded-lg">
           {error}
