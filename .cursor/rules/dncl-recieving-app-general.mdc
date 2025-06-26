@@ -1,0 +1,95 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# 📦 App Rule Set: 2-Image Rental Check-In System (Backend Rules)
+
+## 🔧 Core Purpose
+This backend serves as the operational backbone for a 2-image upload system modeled after U-Haul check-ins. It enables users to upload **2 private images** per rental operation session via a unique URL. All images are stored in **Amazon S3 (private)** and accessed only through **pre-signed URLs** internally.
+
+---
+
+## 🧱 Architectural Principles
+
+- Use **Node.js + Express** as the backend framework
+- Use **PostgreSQL** for storing session and image metadata
+- Use **Amazon S3** (private bucket) to store images
+- Use **pre-signed URLs** for all upload and viewing operations
+- No login system: access is controlled via unique `session_id` tokens
+- Keep images for 30 days only (enforced via S3 lifecycle rule)
+
+---
+
+## 🧭 Key Functional Rules
+
+### ✅ Upload Flow Rules
+1. Each session allows **exactly 2 image uploads**
+2. Session is identified by a UUID (stored in `sessions` table)
+3. A session is created in advance by internal staff/system
+4. Users open a unique URL `/upload/:session_id` to upload images
+5. Tracking number is scanned or input on that same page
+6. Images are uploaded directly from the device to S3 via **pre-signed PUT URLs**
+7. After 2 uploads, the session is auto-marked `completed`
+
+### ✅ Admin Rules
+- Admins can view uploaded images via signed GET links
+- Admin dashboard endpoint `/admin/session/:id` returns session info + image links
+- Admins do not manage storage — cleanup is automatic via S3 rules
+
+---
+
+## 📁 S3 Bucket Rules
+
+- All images are private
+- Folder structure: `uploads/{session_id}/{filename}`
+- Images are deleted automatically after 30 days via lifecycle policy
+- File types allowed: `image/jpeg`, `image/png` (enforce in backend)
+- Max file size: 5MB per image (enforce via frontend or S3 upload rule)
+
+---
+
+## 🔐 Security Rules
+
+- All endpoints use `session_id` as the security key (UUID v4)
+- Only allow 2 image uploads per session
+- Do not expose raw S3 URLs — always return pre-signed links
+- Backend validates:
+  - Session existence
+  - Upload quota
+  - File type + name
+
+---
+
+## ⚙️ Deployment Rules
+
+- Host backend using Render or Railway
+- Use `.env` for storing S3 credentials and DB connection
+- Keep the system stateless — no sessions/cookies
+- Daily cronjob (optional) for:
+  - Marking expired sessions
+  - Reporting incomplete check-ins
+- Image UI page should be mobile-first, camera-enabled
+
+---
+
+## 📤 API Contract Summary
+
+| Method | Route | Purpose |
+|--------|-------|---------|
+| `POST` | `/api/session/create` | Create session + upload link |
+| `GET`  | `/upload/:session_id` | Render upload UI |
+| `POST` | `/api/upload-url` | Generate pre-signed PUT URL |
+| `POST` | `/api/track` | Submit scanned tracking info |
+| `POST` | `/api/session/complete` | Mark session complete |
+| `GET`  | `/api/admin/session/:id` | View uploaded image links internally |
+
+---
+
+## 🧩 Future Notes
+
+- Optionally extend with admin login or IP filtering
+- Add frontend validation for image previews before upload
+- Consider switching to signed GET + CloudFront if image volume increases
+
+
